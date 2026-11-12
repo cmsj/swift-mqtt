@@ -21,7 +21,7 @@ private let integrationHost = ProcessInfo.processInfo.environment["MQTT_TEST_HOS
     .timeLimit(.minutes(1))
 )
 struct BrokerIntegrationTests {
-    enum Transport: String, CaseIterable, Sendable {
+    enum Scheme: String, CaseIterable, Sendable {
         case tcp, tls, ws, wss, quic
 
         func endpoint(host: String) -> Endpoint {
@@ -37,10 +37,10 @@ struct BrokerIntegrationTests {
 
     // Serialized: two simultaneous QUIC connections from one process get one reset
     // (ECONNRESET) by broker.emqx.io. To be investigated with the new transport.
-    @Test(.serialized, arguments: Transport.allCases, [Version.v3_1_1, .v5_0])
-    func publishedMessagesComeBack(transport: Transport, version: Version) async throws {
+    @Test(.serialized, arguments: Scheme.allCases, [Version.v3_1_1, .v5_0])
+    func publishedMessagesComeBack(scheme: Scheme, version: Version) async throws {
         let host = try #require(integrationHost)
-        let client = makeClient(version: version, endpoint: transport.endpoint(host: host))
+        let client = makeClient(version: version, endpoint: scheme.endpoint(host: host))
         do {
             try await roundTrip(client)
         } catch {
@@ -73,5 +73,25 @@ struct BrokerIntegrationTests {
 
         _ = try await client.unsubscribe([topic])
         try await client.close()
+    }
+
+    /// The raw transport alone: open each transport and complete an MQTT handshake.
+    @Test(.serialized, arguments: Scheme.allCases)
+    func transportCompletesHandshake(scheme: Scheme) async throws {
+        let host = try #require(integrationHost)
+        let transport = Transport(scheme.endpoint(host: host), config: Config(.v5_0))
+        try await transport.connect()
+        let clientId = "swift-mqtt-test-\(UUID().uuidString.prefix(8))"
+        let connect = ConnectPacket(cleanSession: true, keepAlive: 60, clientId: clientId, username: nil, password: nil, properties: [], will: nil)
+        try await transport.send(Data(try encode(connect, .v5_0)))
+
+        var framer = PacketFramer()
+        var connack: ConnackPacket?
+        while connack == nil {
+            framer.append(try await transport.receive())
+            connack = try framer.next().map { try $0.packet(with: .v5_0) } as? ConnackPacket
+        }
+        #expect(connack?.returnCode == 0)
+        transport.close()
     }
 }

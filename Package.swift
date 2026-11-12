@@ -3,6 +3,11 @@
 
 import PackageDescription
 
+let swiftSettings: [SwiftSetting] = [
+    // Nonisolated async functions run on the caller's executor (SE-0461).
+    .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+]
+
 let package = Package(
     name: "swift-mqtt",
     platforms: [.macOS("27.0")],
@@ -19,10 +24,13 @@ let package = Package(
             name: "MQTT",
             dependencies: [
                 .product(name: "Promise", package: "swift-promise")
-            ]
+            ],
+            swiftSettings: swiftSettings
         ),
         .testTarget(
             name: "MQTTTests",
-            dependencies: ["MQTT"]),
+            dependencies: ["MQTT"],
+            swiftSettings: swiftSettings
+        ),
     ]
 )
