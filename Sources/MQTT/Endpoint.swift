@@ -104,7 +104,6 @@ public struct Endpoint:Sendable{
     ///    - tls: The tls handshake options
     /// - Important: The property `opt.idleTimout` wil bel overwrited by `config.keepAlive` when `config.pingEnable` is true.
     ///
-    @available(macOS 12.0, iOS 15.0, watchOS 8.0, tvOS 15.0, *)
     public static func quic(
         host:String,
         port:UInt16 = 14567,
@@ -117,18 +116,14 @@ public struct Endpoint:Sendable{
     func params(config:Config)->(NWEndpoint,NWParameters){
         switch self.type {
         case .quic:
-            if #available(macOS 12.0, iOS 15.0, watchOS 8.0, tvOS 15.0, *) {
-                let quic = opt as! NWProtocolQUIC.Options
-                if config.pingEnabled{
-                    quic.idleTimeout = Int(config.keepAlive) * 1500 // 1.5x keepAlive time
-                }
-                tls?.update_sec_options(quic.securityProtocolOptions)
-                let params = NWParameters(quic: quic)
-                params.allowFastOpen = true //enable 0 rtt connection
-                return (nw,params)
-            } else {
-                fatalError("Never happend")
+            let quic = opt as! NWProtocolQUIC.Options
+            if config.pingEnabled{
+                quic.idleTimeout = Int(config.keepAlive) * 1500 // 1.5x keepAlive time
             }
+            tls?.update_sec_options(quic.securityProtocolOptions)
+            let params = NWParameters(quic: quic)
+            params.allowFastOpen = true //enable 0 rtt connection
+            return (nw,params)
         case .tls:
             return (nw,tlsParams(config.connectTimeout))
         case .tcp:
@@ -143,9 +138,9 @@ public struct Endpoint:Sendable{
             return (nw,params)
         }
     }
-    private func tlsParams(_ timout:TimeInterval)->NWParameters{
+    private func tlsParams(_ timeout:Duration)->NWParameters{
         let tcp = opt as! NWProtocolTCP.Options
-        tcp.connectionTimeout = Int(timout)
+        tcp.connectionTimeout = Int(timeout.components.seconds)
         let tlsOptions = NWProtocolTLS.Options()
         self.tls?.update_sec_options(tlsOptions.securityProtocolOptions)
         tcp.enableFastOpen = true //enable 0 rtt connection
@@ -154,9 +149,9 @@ public struct Endpoint:Sendable{
         return params
         
     }
-    private func tcpParams(_ timeout:TimeInterval)->NWParameters{
+    private func tcpParams(_ timeout:Duration)->NWParameters{
         let tcp = opt as! NWProtocolTCP.Options
-        tcp.connectionTimeout = Int(timeout)
+        tcp.connectionTimeout = Int(timeout.components.seconds)
         return NWParameters(tls: nil,tcp: tcp)
     }
     private func wsOptions()->NWProtocolWebSocket.Options{
@@ -240,7 +235,7 @@ public struct TLSOptions:Sendable{
                 SecTrustSetAnchorCertificates(trust, trusts as CFArray)
                 SecTrustEvaluateAsyncWithError(trust, self.queue) { _, result, error in
                     if let error {
-                        Logger.error("Trust failed: \(error.localizedDescription)")
+                        logger.error("Trust failed: \(error.localizedDescription)")
                     }
                     complete(result)
                 }
@@ -268,7 +263,7 @@ extension TLSOptions{
         }
     }
     /// Server Trust
-    public enum ServerTrust:@unchecked Sendable{
+    public enum ServerTrust:Sendable{
         /// Trust all means not verify
         /// - Important: This setting is not secure and is usually only used as a test during the development phase
         case trustAll
@@ -285,39 +280,41 @@ extension TLSOptions{
             throw MQTTError.invalidCertData
         }
     }
-    public struct Credential:@unchecked Sendable{
-        public let id:SecIdentity
-        public let certs:[SecCertificate]
+    /// A client certificate and private key from a PKCS#12 (`.p12`) archive.
+    ///
+    /// Holds the archive rather than a `SecIdentity`, which is not `Sendable`;
+    /// the identity is imported again for each connection.
+    public struct Credential:Sendable{
+        private let data:Data
+        private let passwd:String
         /// Create from p12 filePath
         public static func create(from filePath:String,passwd:String)throws->Self{
             let data = try Data(contentsOf: URL(fileURLWithPath: filePath))
             return try create(from: data, passwd: passwd)
         }
-        /// Create from p12 data
+        /// Create from p12 data. Throws `MQTTError.invalidCertData` if it can't be imported.
         public static func create(from data:Data,passwd:String)throws ->Self{
-            let options = [kSecImportExportPassphrase as String: passwd]
-            var rawItems: CFArray?
-            let status = SecPKCS12Import(data as CFData,options as CFDictionary,&rawItems)
-            guard status == errSecSuccess else {
+            let credential = Credential(data: data, passwd: passwd)
+            guard credential.identity != nil else {
                 throw MQTTError.invalidCertData
             }
-            guard let items = rawItems as? [[String:Any]] else{
-                throw MQTTError.invalidCertData
-            }
-            guard let item = items.first,
-                  let certs = item[kSecImportItemCertChain as String] as? [SecCertificate] else {
-                throw MQTTError.invalidCertData
-            }
-            let identity = item[kSecImportItemIdentity as String] as! SecIdentity
-            return .init(id: identity, certs: certs)
+            return credential
         }
         var identity:sec_identity_t?{
-            sec_identity_create_with_certificates(id, certs as CFArray)
+            let options = [kSecImportExportPassphrase as String: passwd]
+            var rawItems: CFArray?
+            guard SecPKCS12Import(data as CFData,options as CFDictionary,&rawItems) == errSecSuccess,
+                  let items = rawItems as? [[String:Any]],
+                  let item = items.first,
+                  let certs = item[kSecImportItemCertChain as String] as? [SecCertificate],
+                  let identity = item[kSecImportItemIdentity as String] else {
+                return nil
+            }
+            return sec_identity_create_with_certificates(identity as! SecIdentity, certs as CFArray)
         }
     }
 }
 
-@available(macOS 12.0, iOS 15.0, watchOS 8.0, tvOS 15.0, *)
 extension NWProtocolQUIC.Options{
     public class var mqtt:NWProtocolQUIC.Options{
         .init(alpn:["mqtt"])

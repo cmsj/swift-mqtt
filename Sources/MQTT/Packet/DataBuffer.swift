@@ -7,22 +7,18 @@
 
 import Foundation
 
-@usableFromInline
 struct DataBuffer:Sendable,Equatable{
-    @usableFromInline private(set) var data:Data
-    @usableFromInline var nextIndex:Int = 0
+    private(set) var data:Data
+    var nextIndex:Int = 0
     
-    @inlinable
     init(data: Data = Data()) {
         self.data = data
     }
     
     /// integer read and write
-    @inlinable
     mutating func writeByte(_ byte:UInt8) {
         self.data.append(byte)
     }
-    @inlinable
     mutating func readByte() -> UInt8? {
         guard self.readableBytes >= 1 else {
             return nil
@@ -33,13 +29,11 @@ struct DataBuffer:Sendable,Equatable{
     }
     
     /// data read and write
-    @inlinable
     mutating func writeData(_ data: Data){
         self.data.append(data)
     }
     
     /// read all data when length is nil
-    @inlinable
     mutating func readData(length:Int? = nil)->Data?{
         let len = length ?? self.readableBytes
         guard self.readableBytes >= len else {
@@ -51,13 +45,11 @@ struct DataBuffer:Sendable,Equatable{
     }
     
     /// buffer read and write
-    @inlinable
     mutating func writeBuffer(_ buffer: inout DataBuffer){
         if let data = buffer.readData(){
             self.data.append(data)
         }
     }
-    @inlinable
     mutating func readBuffer(length:Int)->DataBuffer?{
         guard let data = self.readData(length: length) else{
             return nil
@@ -66,13 +58,11 @@ struct DataBuffer:Sendable,Equatable{
     }
     
     /// string read and write
-    @inlinable
     mutating func writeString(_ string:String){
         if let data = string.data(using: .utf8){
             self.data.append(data)
         }
     }
-    @inlinable
     mutating func readString(length:Int)->String?{
         guard let data = self.readData(length: length) else{
             return nil
@@ -81,13 +71,11 @@ struct DataBuffer:Sendable,Equatable{
     }
     
     /// integer read and write
-    @inlinable
     mutating func writeInteger<T: FixedWidthInteger>(_ integer: T,as: T.Type = T.self) {
         var int = integer.bigEndian
         let data = Data(bytes: &int, count: MemoryLayout<T>.size)
         self.data.append(data)
     }
-    @inlinable
     mutating func readInteger<T: FixedWidthInteger>(as: T.Type = T.self) -> T? {
         let length = MemoryLayout<T>.size
         guard self.readableBytes >= length else {
@@ -101,7 +89,6 @@ struct DataBuffer:Sendable,Equatable{
         return result
     }
     /// 
-    @inlinable
     var readableBytes:Int{
         return data.count-nextIndex
     }

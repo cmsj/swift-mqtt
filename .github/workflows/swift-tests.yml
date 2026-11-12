@@ -12,13 +12,27 @@ on:
 jobs:
   test:
     name: Run Tests
-    runs-on: macos-latest
+    runs-on: xcode-27
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Build
-      run: swift build -v
+    - name: Check for unchecked concurrency escapes
+      run: |
+        if grep -rnE '@unchecked +Sendable|nonisolated\(unsafe\)' Sources Tests; then
+          echo "::error::Use actors, Mutex or Sendable value types instead"
+          exit 1
+        fi
 
-    - name: Run tests
-      run: swift test -v
+    - name: Build
+      run: swift build --build-tests
+
+    # Codec and fake-broker behaviour tests. Self-contained: no network access needed.
+    - name: Unit and behaviour tests
+      run: swift test --skip-build --skip BrokerIntegrationTests
+
+    # End-to-end tests over every transport against the public EMQX broker.
+    - name: Broker integration tests
+      env:
+        MQTT_TEST_HOST: broker.emqx.io
+      run: swift test --skip-build --filter BrokerIntegrationTests
