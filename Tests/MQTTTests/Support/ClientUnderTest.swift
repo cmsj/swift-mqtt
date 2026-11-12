@@ -137,5 +137,5 @@ func withHarness(_ version: Version, _ body: (Harness) async throws -> Void) asy
         throw error
     }
     await harness.client.shutdown()
-    await broker.stop()
+    broker.stop()
 }

@@ -21,19 +21,17 @@ enum Serializer {
             }
         } while value != 0
     }
-    /// read variable length from bytebuffer
+    /// read variable length from bytebuffer. MQTT limits it to 4 bytes (max 268,435,455)
     static func readVarint(from byteBuffer: inout DataBuffer) throws -> Int {
         var value = 0
-        var shift = 0
-        repeat {
+        for shift in stride(from: 0, to: 28, by: 7) {
             guard let byte: UInt8 = byteBuffer.readByte() else { throw MQTTError.incompletePacket }
             value += (Int(byte) & 0x7F) << shift
             if byte & 0x80 == 0 {
-                break
+                return value
             }
-            shift += 7
-        } while true
-        return value
+        }
+        throw MQTTError.decodeError(.varintOverflow)
     }
     static func varintPacketSize(_ value: Int) -> Int {
         var value = value

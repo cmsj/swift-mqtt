@@ -203,10 +203,6 @@ extension NWConnection.ContentContext{
         }
         return .mqttContext
     }
-    private static var mqttContext:NWConnection.ContentContext = {
-        return .init(identifier: "swift-mqtt")
-    }()
-    private static var wsMQTTContext:NWConnection.ContentContext = {
-        return .init(identifier: "swift-mqtt",metadata: [NWProtocolWebSocket.Metadata(opcode: .binary)])
-    }()
+    private static let mqttContext = NWConnection.ContentContext(identifier: "swift-mqtt")
+    private static let wsMQTTContext = NWConnection.ContentContext(identifier: "swift-mqtt",metadata: [NWProtocolWebSocket.Metadata(opcode: .binary)])
 }

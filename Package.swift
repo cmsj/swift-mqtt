@@ -19,9 +19,7 @@ let package = Package(
             name: "MQTT",
             dependencies: [
                 .product(name: "Promise", package: "swift-promise")
-            ],
-            // The legacy client is not Swift 6 clean; it is replaced by the actor rewrite.
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            ]
         ),
         .testTarget(
             name: "MQTTTests",

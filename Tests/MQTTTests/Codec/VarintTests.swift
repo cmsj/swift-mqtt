@@ -33,10 +33,8 @@ struct VarintTests {
     @Test
     func rejectsVarintLongerThanFourBytes() {
         var buffer = DataBuffer(data: Data([0x80, 0x80, 0x80, 0x80, 0x01]))
-        withKnownIssue("readVarint has no 4-byte limit; a malformed length is accepted") {
-            #expect(throws: MQTTError.decodeError(.varintOverflow)) {
-                try Serializer.readVarint(from: &buffer)
-            }
+        #expect(throws: MQTTError.decodeError(.varintOverflow)) {
+            try Serializer.readVarint(from: &buffer)
         }
     }
 }
