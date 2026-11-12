@@ -24,7 +24,7 @@ struct KeepAliveTests {
             var options = OpenOptions()
             options.keepAlive = 1
             options.pingEnabled = true
-            options.pingTimeout = 0.3
+            options.pingTimeout = .milliseconds(300)
             let connection = try await h.connect(options)
             #expect(try await connection.next(within: .seconds(3)) == .pingreq)
             let closed = try await h.client.events.waitForStatus { $0.isClosed }

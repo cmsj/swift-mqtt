@@ -52,11 +52,12 @@ struct InboundTests {
         }
     }
 
-    @Test(.disabled("Crashes the legacy client: the PUBREC timeout handler returns Promise<Packet> where swift-promise expects Void and calls fatalError"))
+    /// The legacy client timed out waiting for PUBREL and crashed in its retry handler.
+    @Test
     func lateInboundPubrelStillCompletesQoS2() async throws {
         try await withHarness(.v5_0) { h in
             var options = OpenOptions()
-            options.publishTimeout = 0.2
+            options.requestTimeout = .milliseconds(200)
             let connection = try await h.connect(options)
             connection.send(BrokerEncoder.publish(topic: "a/b", payload: "hi", qos: 2, id: 6, protocolLevel: 5))
             #expect(try await connection.next() == .pubrec(id: 6, reason: 0))

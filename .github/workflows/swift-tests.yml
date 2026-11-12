@@ -17,6 +17,13 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Check for unchecked concurrency escapes
+      run: |
+        if grep -rnE '@unchecked +Sendable|nonisolated\(unsafe\)' Sources Tests; then
+          echo "::error::Use actors, Mutex or Sendable value types instead"
+          exit 1
+        fi
+
     - name: Build
       run: swift build --build-tests
 

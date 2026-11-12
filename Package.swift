@@ -16,15 +16,9 @@ let package = Package(
             name: "MQTT",
             targets: ["MQTT"]),
     ],
-    dependencies: [
-        .package(url: "https://github.com/sutext/swift-promise", from: "2.3.0"),
-    ],
     targets: [
         .target(
             name: "MQTT",
-            dependencies: [
-                .product(name: "Promise", package: "swift-promise")
-            ],
             swiftSettings: swiftSettings
         ),
         .testTarget(

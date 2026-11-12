@@ -79,7 +79,7 @@ struct BrokerIntegrationTests {
     @Test(.serialized, arguments: Scheme.allCases)
     func transportCompletesHandshake(scheme: Scheme) async throws {
         let host = try #require(integrationHost)
-        let transport = Transport(scheme.endpoint(host: host), config: Config(.v5_0))
+        let transport = Transport(scheme.endpoint(host: host), config: Config())
         try await transport.connect()
         let clientId = "swift-mqtt-test-\(UUID().uuidString.prefix(8))"
         let connect = ConnectPacket(cleanSession: true, keepAlive: 60, clientId: clientId, username: nil, password: nil, properties: [], will: nil)

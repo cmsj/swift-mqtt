@@ -6,41 +6,16 @@
 //
 
 import Foundation
-@_exported import Promise
+import os
 
-public enum Logger:Sendable{
-    nonisolated(unsafe) public static var level:Level = .warning
-    private static func log(_ level: Level, message: String) {
-        guard level.rawValue >= self.level.rawValue else { return }
-        print("MQTT(\(level)): \(message)")
-    }
-    public static func debug(_ message: String) {
-        log(.debug, message: message)
-    }
-    public static func info(_ message: String) {
-        log(.info, message: message)
-    }
-    public static func warning(_ message: String) {
-        log(.warning, message: message)
-    }
-    public static func error(_ message: String) {
-        log(.error, message: message)
-    }
-    public static func error(_ error: Error?){
-        log(.error, message: error.debugDescription)
-    }
-}
-extension Logger{
-    public enum Level: Int, Sendable {
-        case debug = 0, info, warning, error, off
-    }
-}
-public enum Version:Sendable{
+let logger = os.Logger(subsystem: "swift-mqtt", category: "MQTT")
+
+public enum Version: Sendable {
     case v5_0
     case v3_1_1
-    var string:String{
+    var string: String {
         switch self {
-        case .v5_0:  return "5.0"
+        case .v5_0: return "5.0"
         case .v3_1_1: return "3.1.1"
         }
     }
@@ -51,91 +26,85 @@ public enum Version:Sendable{
         }
     }
 }
-/// - Note:We do not consider the data race of Config. because all configurations need to be set before Client.open.
-/// Otherwise it will take effect on the next open
-public final class Config:@unchecked Sendable{
-    /// protocol version init in client
-    public let version:Version
-    /// MQTT keep alive period in second.
-    /// - Note:Please set this value before client open, otherwise it will take effect on the next open
-    public var keepAlive: UInt16 = 60{
-        didSet{
-            assert(keepAlive>0, "keepalive must be greater than zero!")
-        }
-    }
-    /// Enable `keepAlive`
-    /// - Note:Please set this value before client open, otherwise it will take effect on the next open
-    public var pingEnabled: Bool = true
-    /// The socket will auto reconnect when ping timeout
-    /// - Note:Please set this value before client open, otherwise it will take effect on the next open
-    public var pingTimeout: TimeInterval = 5{
-        didSet{
-            assert(pingTimeout>0, "pingTimeout must be greater than zero!")
-        }
-    }
-    /// Timeout second  for connecting to server
-    /// - Important: This setting does not take effect in the quic protocol. In the quic protocol is fixed at 30s and cannot be modified
-    /// - Note:Please set this value before client open, otherwise it will take effect on the next open
-    public var connectTimeout: TimeInterval = 30{
-        didSet{
-            assert(connectTimeout>0, "connectTimeout must be greater than zero!")
-        }
-    }
-    /// Timeout second  for pubulish  flow.
-    /// - Note:Please set this value before client open, otherwise it will take effect on the next open
-    public var publishTimeout: TimeInterval = 5{
-        didSet{
-            assert(publishTimeout>0, "publishTimeout must be greater than zero!")
-        }
-    }
-    init(_ version:Version){
-        self.version = version
+
+/// Client settings. Changes made with `MQTTClient.configure(_:)` take effect on the next `open`.
+public struct Config: Sendable {
+    /// MQTT keep alive period in seconds, sent in `CONNECT`. A server may override it in `CONNACK`.
+    public var keepAlive: UInt16 = 60
+    /// Send `PINGREQ` when the connection has been idle for `keepAlive` seconds.
+    public var pingEnabled = true
+    /// How long to wait for `PINGRESP` before treating the connection as lost.
+    public var pingTimeout: Duration = .seconds(5)
+    /// How long to wait for the transport to connect and the broker to answer `CONNECT`.
+    /// - Important: QUIC's handshake timeout is fixed by the system at 30 seconds.
+    public var connectTimeout: Duration = .seconds(30)
+    /// How long to wait for the broker to acknowledge a publish, subscribe, unsubscribe or auth request.
+    ///
+    /// A QoS 1 or 2 publish that times out is not resent on the same connection (MQTT 5 §4.4).
+    /// It stays in the session and is resent if the client reconnects to a resumed session.
+    public var requestTimeout: Duration = .seconds(5)
+    /// Reconnect automatically after an unexpected disconnect. `nil` disables reconnection.
+    public var retrier: Retrier?
+    /// Close the connection while the network is unavailable, and reconnect when it returns.
+    public var monitorsNetwork = false
+
+    public init() {}
+}
+
+/// Last will message, published by the broker if the client disconnects unexpectedly.
+public struct Will: Sendable {
+    public var topic: String
+    public var payload: Data
+    public var qos: MQTTQoS
+    public var retain: Bool
+    /// MQTT v5 will properties. Must be empty for v3.1.1.
+    public var properties: Properties
+
+    public init(topic: String, payload: Data, qos: MQTTQoS = .atMostOnce, retain: Bool = false, properties: Properties = []) {
+        self.topic = topic
+        self.payload = payload
+        self.qos = qos
+        self.retain = retain
+        self.properties = properties
     }
 }
 
-class MQTTTask:@unchecked Sendable{
-    private let promise:Promise<Packet>
-    @Safely private var item:DispatchWorkItem?
-    init(){
-        self.promise = .init()
-    }
-    func done(with packet: Packet){
-        if self.promise.isDone{ return }
-        self.promise.done(packet)
-        self.cancelTimeout()
-    }
-    func done(with error: any Error){
-        if self.promise.isDone{ return }
-        self.promise.done(error)
-        self.cancelTimeout()
-    }
-    func cancelTimeout(){
-        self.item?.cancel()
-        self.item = nil
-    }
-    func start(in queue:DispatchQueue, timeout:TimeInterval? = nil) -> Promise<Packet>{
-        if let timeout{
-            let item = DispatchWorkItem{[weak self] in
-                self?.promise.done(MQTTError.timeout)
-            }
-            queue.asyncAfter(deadline: .now()+timeout, execute: item)
-            self.item = item
-        }
-        return self.promise
+public struct Identity: Sendable {
+    /// MQTT client id sent in `CONNECT`. A v5 broker may assign a different one.
+    public internal(set) var clientId: String
+    /// MQTT username sent in `CONNECT`
+    public let username: String?
+    /// MQTT password sent in `CONNECT`
+    public let password: String?
+    public init(_ clientId: String = UUID().uuidString, username: String? = nil, password: String? = nil) {
+        self.clientId = clientId
+        self.username = username
+        self.password = password
     }
 }
+
+/// MQTT v5 enhanced authentication step: receives the broker's `AUTH` challenge and returns the response.
+public typealias Authflow = @Sendable (Auth) async throws -> Auth
+
+/// Something that happened on a client, delivered through `MQTTClient.events()`.
+public enum MQTTEvent: Sendable {
+    case status(Status, previous: Status)
+    case message(Message)
+    case error(any Error)
+}
+
 /// Indicates the level of assurance for delivery of a packet.
 public enum MQTTQoS: UInt8, Sendable {
     /// fire and forget
     case atMostOnce = 0
-    /// wait for `PUBACK`, if you don't receive it after a period of time retry sending
+    /// wait for `PUBACK`
     case atLeastOnce = 1
     /// wait for `PUBREC`, send `PUBREL` and then wait for `PUBCOMP`
     case exactlyOnce = 2
 }
-public enum MQTTError:Sendable,Hashable, Swift.Error {
+
+public enum MQTTError: Sendable, Hashable, Swift.Error {
     /// client timed out while waiting for response from server
-    /// This includes connection timeouts and writing timeouts
     case timeout
     /// client in not connect to the broker
     case unconnected
@@ -143,8 +112,7 @@ public enum MQTTError:Sendable,Hashable, Swift.Error {
     case packetError(Packet)
     /// Decode of MQTT message failed
     case decodeError(Decode)
-    /// the server disconnected
-    /// the server closed the connection. If this happens during a publish you can resend the publish packet by reconnecting to server with `cleanSession` set to false.
+    /// the server closed the connection
     case serverClose(ResultCode.Disconnect)
     /// user closed connectiion
     case clientClose(ResultCode.Disconnect)
@@ -166,13 +134,13 @@ public enum MQTTError:Sendable,Hashable, Swift.Error {
     /// Packet error incomplete packet
     case incompletePacket
     /// Auth packets sent without authWorkflow being supplied
-    case authflowRequired    
+    case authflowRequired
 }
-extension MQTTError{
+extension MQTTError {
     /// Errors generated by bad packets sent by the client
-    public enum Packet:Sendable,Hashable {
+    public enum Packet: Sendable, Hashable {
+        /// A parameter is invalid, or only valid for MQTT v5
         case badParameter
-        /// Packet sent contained invalid entries
         /// QoS is not accepted by this connection as it is greater than the accepted value
         case qosInvalid
         /// publish messages on this connection do not support the retain flag
@@ -188,9 +156,8 @@ extension MQTTError{
     }
 }
 
-
-extension MQTTError{
-    public enum Decode:Sendable,Hashable{
+extension MQTTError {
+    public enum Decode: Sendable, Hashable {
         /// Read variable length overflow
         case varintOverflow
         /// Reader stream completed
@@ -203,8 +170,8 @@ extension MQTTError{
         case unrecognisedPacketType
     }
 }
-extension MQTTError:CustomStringConvertible{
-    public var description: String{
+extension MQTTError: CustomStringConvertible {
+    public var description: String {
         switch self {
         case .timeout:
             return "MQTTError.timeout"
@@ -221,7 +188,7 @@ extension MQTTError:CustomStringConvertible{
         case .publishFailed(let puback):
             return "MQTTError.publishFailed(\(puback))"
         case .connectFailed(let resultCode):
-            return "MQTTError.connectFailed(\(resultCode == nil ? "nil" : "\(resultCode!)"))"
+            return "MQTTError.connectFailed(\(resultCode.map { "\($0)" } ?? "nil"))"
         case .alreadyOpened:
             return "MQTTError.alreadyOpened"
         case .alreadyClosed:

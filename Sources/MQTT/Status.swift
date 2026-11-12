@@ -22,6 +22,10 @@ import Network
         case .closed(let reason): return "closed:reason:\(reason?.description ?? "nil")"
         }
     }
+    public var isClosed: Bool {
+        if case .closed = self { return true }
+        return false
+    }
 }
 ///  close reason
 @frozen public enum CloseReason:Sendable,Hashable,CustomStringConvertible{

@@ -54,8 +54,7 @@ struct SessionTests {
             var options = OpenOptions()
             options.retry = .init(interval: 0.1, limit: 3)
             let first = try await h.connect(options)
-            // The outcome of this call differs between implementations (the legacy
-            // client fails it on disconnect), so only the wire behaviour is asserted.
+            // The call itself fails when the connection drops; this checks the resend.
             let publishing = Task { try await h.client.publish("a/b", "x", qos: .atLeastOnce) }
             let original = try await first.expectPublish()
             first.drop()

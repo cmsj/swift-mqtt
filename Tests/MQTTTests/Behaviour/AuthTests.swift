@@ -22,11 +22,8 @@ struct AuthTests {
             connection.send(BrokerEncoder.auth(reason: 0x18, method: "test"))
             #expect(try await connection.next() == .auth(reason: 0x18, method: "test"))
             connection.send(BrokerEncoder.connack(protocolLevel: 5))
-            await withKnownIssue("Legacy client hands the AUTH reply to the connect task, so the final CONNACK finds no task and open() never completes") {
-                let result = try await opening.value
-                #expect(result.reasonCode == 0)
-                #expect(await h.client.status == .opened)
-            }
+            #expect(try await opening.value.reasonCode == 0)
+            #expect(await h.client.status == .opened)
         }
     }
 }

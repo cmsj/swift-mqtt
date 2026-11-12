@@ -93,31 +93,32 @@ struct PublishTests {
         }
     }
 
-    /// Legacy behaviour: an unacknowledged QoS 1 PUBLISH is resent with DUP every
-    /// `publishTimeout` until acknowledged. The rewrite will change this: MQTT 5 §4.4
-    /// only allows resending on reconnect, so the call should throw `.timeout` instead.
+    /// MQTT 5 §4.4 only allows resending on reconnect, so a timed-out publish fails
+    /// and stays in the session instead of being resent on the same connection.
     @Test
-    func unacknowledgedQoS1IsResentWithDupAfterTimeout() async throws {
+    func unacknowledgedQoS1TimesOutWithoutResending() async throws {
         try await withHarness(.v5_0) { h in
             var options = OpenOptions()
-            options.publishTimeout = 0.2
+            options.requestTimeout = .milliseconds(200)
             let connection = try await h.connect(options)
-            async let result = h.client.publish("a/b", "hello", qos: .atLeastOnce)
-            let first = try await connection.expectPublish()
-            let resent = try await connection.expectPublish()
-            #expect(resent.id == first.id)
-            #expect(resent.dup)
-            #expect(resent.payload == first.payload)
-            connection.send(BrokerEncoder.ack(0x40, id: first.id, protocolLevel: 5))
-            #expect(try await result == 0)
+            let publishing = Task { try await h.client.publish("a/b", "hello", qos: .atLeastOnce) }
+            _ = try await connection.expectPublish()
+            await #expect(throws: MQTTError.timeout) {
+                try await publishing.value
+            }
+            await #expect(throws: MailboxError.self) {
+                try await connection.next(within: .milliseconds(300))
+            }
+            #expect(await h.client.status == .opened)
         }
     }
 
-    @Test(.disabled("Crashes the legacy client: the PUBREL timeout handler returns Promise<Packet> where swift-promise expects Puback? and calls fatalError"))
+    /// The legacy client crashed here: its PUBREL timeout handler hit a fatalError in swift-promise.
+    @Test
     func unacknowledgedPubrelTimesOut() async throws {
         try await withHarness(.v5_0) { h in
             var options = OpenOptions()
-            options.publishTimeout = 0.2
+            options.requestTimeout = .milliseconds(200)
             let connection = try await h.connect(options)
             let publishing = Task { try await h.client.publish("a/b", "hello", qos: .exactlyOnce) }
             let publish = try await connection.expectPublish()

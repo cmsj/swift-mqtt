@@ -16,7 +16,7 @@ enum MailboxError: Error, CustomStringConvertible {
 /// A thread-safe FIFO queue with one asynchronous reader.
 ///
 /// `push` is synchronous, so producers on a serial queue (Network.framework callbacks,
-/// legacy delegate callbacks) deliver elements in the order they happened.
+/// a single event-stream consumer) deliver elements in the order they happened.
 final class Mailbox<Element: Sendable>: Sendable {
     private struct State {
         var items: [Element] = []

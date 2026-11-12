@@ -39,8 +39,8 @@ struct OpenOptions: Sendable {
     var keepAlive: UInt16 = 60
     /// Off by default so keep-alive pings don't interleave with the packets a test expects.
     var pingEnabled = false
-    var pingTimeout: TimeInterval = 5
-    var publishTimeout: TimeInterval = 5
+    var pingTimeout: Duration = .seconds(5)
+    var requestTimeout: Duration = .seconds(5)
     var retry: Retry?
     /// v5 enhanced authentication method, sent in CONNECT.
     var authMethod: String?
@@ -86,11 +86,6 @@ final class ClientEvents: Sendable {
 }
 
 extension Status {
-    var isClosed: Bool {
-        if case .closed = self { return true }
-        return false
-    }
-
     var closeReason: CloseReason? {
         if case .closed(let reason) = self { return reason }
         return nil
@@ -101,7 +96,7 @@ extension Status {
 
 /// The one place that decides which client implementation the tests exercise.
 func makeClient(version: Version, endpoint: Endpoint) -> any ClientUnderTest {
-    LegacyClient(version: version, endpoint: endpoint)
+    ActorClient(version: version, endpoint: endpoint)
 }
 
 struct Harness: Sendable {
